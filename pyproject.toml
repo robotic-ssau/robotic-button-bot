@@ -1,0 +1,41 @@
+[project]
+name = "lababot"
+version = "0.2.0"
+description = "Bot for robotic club"
+authors = [
+    {name = "sapdotten"},
+    {name = "xma4602"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "aiogram (>=3.21.0,<4.0.0)",
+    "requests (>=2.32.4,<3.0.0)",
+    "python-dotenv (>=1.1.1,<2.0.0)",
+    "pydantic-settings (>=2.10.1,<3.0.0)",
+    "ruff (>=0.12.3,<0.13.0)",
+    "structlog (>=25.4.0,<26.0.0)",
+    "vk-api (>=11.10.0,<12.0.0)"
+]
+
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.poe.tasks.mypy]
+shell = "mypy --explicit-package-bases --config-file .mypy.ini --package src"
+
+[tool.poe.tasks.ruff]
+shell = "ruff check --no-cache --output-format grouped --config .ruff.toml ."
+
+[tool.poe.tasks.ruff-fix]
+shell = "ruff check --no-cache --output-format grouped --fix --show-fixes --config .ruff.toml ."
+
+
+[tool.poetry.group.dev.dependencies]
+poethepoet = "^0.37.0"
+ruff = "^0.12.11"
+mypy = "^1.17.1"
+types-requests = "^2.32.4.20250809"
+

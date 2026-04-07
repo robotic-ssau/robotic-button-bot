@@ -1,0 +1,18 @@
+services:
+  telegram-bot:
+    build:
+      context: ..
+      dockerfile: .docker/Dockerfile
+    command: [ "python3", "src/telegram/entry.py" ]
+    restart: unless-stopped
+    env_file:
+      - .env
+
+  vk-bot:
+    build:
+      context: ..
+      dockerfile: .docker/Dockerfile
+    command: [ "python3", "src/vk/entry.py" ]
+    restart: unless-stopped
+    env_file:
+      - .env
