@@ -1,18 +1,21 @@
+x-bot: &bot
+  build:
+    context: ..
+    dockerfile: .docker/Dockerfile
+  restart: unless-stopped
+  env_file:
+    - .env
+  environment:
+    TZ: ${TZ:-Europe/Samara}  # от часового пояса зависит смена файла логов в полночь
+  volumes:
+    - ../data:/app/data   # council.csv общий для обоих ботов и переживает пересборку
+    - ../logs:/app/logs   # логи: logs/telegram_YYYY-MM-DD.log, logs/vk_YYYY-MM-DD.log
+
 services:
   telegram-bot:
-    build:
-      context: ..
-      dockerfile: .docker/Dockerfile
-    command: [ "python3", "src/telegram/entry.py" ]
-    restart: unless-stopped
-    env_file:
-      - .env
+    <<: *bot
+    command: [ "python3", "-m", "src.telegram.entry" ]
 
   vk-bot:
-    build:
-      context: ..
-      dockerfile: .docker/Dockerfile
-    command: [ "python3", "src/vk/entry.py" ]
-    restart: unless-stopped
-    env_file:
-      - .env
+    <<: *bot
+    command: [ "python3", "-m", "src.vk.entry" ]

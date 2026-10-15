@@ -1,39 +1,58 @@
-import keyboards
+import asyncio
+
 from aiogram import F, types
 from aiogram.dispatcher.router import Router
-from aiogram.filters import Command
+from aiogram.filters import CommandStart
+from aiogram.types import ErrorEvent
+from structlog import get_logger
 
-from src.configs.consts import (
-    COUNCIL_MEMBERS_TG_IDS,
-    IS_OPEN_QUERY,
-    START_TEXT,
-    TO_CLOSE_QUERY,
-    TO_OPEN_QUERY,
-)
-from src.laba import BotType, lab_is_open_answer, lab_switch_state_answer
+from src.core import BotService
+from src.council import Platform
+from src.i18n import t
 
+from .keyboards import build_keyboard
+
+logger = get_logger(__name__)
 router = Router()
 
 
-@router.message(Command(commands=["start"]))
-async def start(msg: types.Message) -> None:
-    if msg.from_user.id in COUNCIL_MEMBERS_TG_IDS:
-        keyboard = keyboards.admin_keyboard()
-    else:
-        keyboard = keyboards.user_keyboard()
-    await msg.answer(START_TEXT, reply_markup=keyboard)
+@router.message(CommandStart())
+async def start(msg: types.Message, service: BotService) -> None:
+    if msg.from_user is None:
+        return
+    reply = await asyncio.to_thread(
+        service.handle_start, Platform.TG, msg.from_user.id, msg.from_user.username
+    )
+    await msg.answer(reply.text, reply_markup=build_keyboard(reply.keyboard))
 
 
-@router.message(F.text == TO_OPEN_QUERY)
-async def open_lab(msg: types.Message) -> None:
-    await msg.answer(lab_switch_state_answer(True, msg.from_user.id, BotType.tg))
+@router.message(F.text)
+async def text_message(msg: types.Message, service: BotService) -> None:
+    if msg.from_user is None or msg.text is None:
+        return
+    reply = await asyncio.to_thread(
+        service.handle_message,
+        Platform.TG,
+        msg.from_user.id,
+        msg.text,
+        msg.from_user.username,
+    )
+    if reply is not None:
+        await msg.answer(reply.text, reply_markup=build_keyboard(reply.keyboard))
 
 
-@router.message(F.text == TO_CLOSE_QUERY)
-async def close_lab(msg: types.Message) -> None:
-    await msg.answer(lab_switch_state_answer(False, msg.from_user.id, BotType.tg))
-
-
-@router.message(F.text == IS_OPEN_QUERY)
-async def get_lab_state(msg: types.Message) -> None:
-    await msg.answer(lab_is_open_answer())
+@router.errors()
+async def on_error(event: ErrorEvent) -> None:
+    message = event.update.message
+    logger.exception(
+        "Unhandled error in telegram handler",
+        update_id=event.update.update_id,
+        user_id=message.from_user.id if message and message.from_user else None,
+        text=message.text if message else None,
+        exc_info=event.exception,
+    )
+    if message is not None:
+        try:
+            await message.answer(t("common.error"))
+        except Exception:
+            logger.exception("Failed to send error message")

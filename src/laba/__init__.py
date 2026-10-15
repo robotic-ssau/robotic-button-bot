@@ -1,9 +1,6 @@
-from .laba_api import LabStateApi
-from .laba_manager import BotType, lab_is_open_answer, lab_switch_state_answer
+from .laba_api import LabApiError, LabStateApi
 
 __all__ = [
-    "lab_is_open_answer",
-    "lab_switch_state_answer",
+    "LabApiError",
     "LabStateApi",
-    "BotType"
 ]

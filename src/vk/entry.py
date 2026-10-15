@@ -1,54 +1,81 @@
+import sys
+import time
+
+import requests
 from structlog import get_logger
+from structlog.contextvars import bound_contextvars
 from vk_api import VkApi
-from vk_api.longpoll import VkEventType, VkLongPoll
-from vk_keyboards import get_keyboard
+from vk_api.exceptions import ApiError
+from vk_api.longpoll import Event, VkEventType, VkLongPoll
+from vk_api.utils import get_random_id
 
-from src.configs import Configs, consts, setup_logging
-from src.laba import BotType, lab_is_open_answer, lab_switch_state_answer
+from src.core import BotService
+from src.core.bootstrap import bootstrap
+from src.council import Platform
+from src.i18n import t
 
-setup_logging()
-logger = get_logger()
+from .vk_keyboards import build_keyboard
+
+RECONNECT_DELAY_SECONDS = 5
+
+logger = get_logger(__name__)
+
+
+def send(vk: object, user_id: int, text: str, keyboard: str) -> None:
+    vk.messages.send(  # type: ignore[attr-defined]
+        user_id=user_id,
+        message=text,
+        keyboard=keyboard,
+        random_id=get_random_id(),
+    )
+    logger.debug("Message sent", user_id=user_id)
+
+
+def process_event(event: Event, vk: object, service: BotService) -> None:
+    user_id: int = event.user_id
+    text: str = event.text or ""
+    with bound_contextvars(vk_message_id=getattr(event, "message_id", None)):
+        try:
+            reply = service.handle_message(Platform.VK, user_id, text)
+            if reply is not None:
+                send(vk, user_id, reply.text, build_keyboard(reply.keyboard))
+        except Exception:
+            logger.exception("Failed to process VK message", user_id=user_id, text=text)
+            try:
+                member = service.council.find(Platform.VK, user_id)
+                send(vk, user_id, t("common.error"),
+                     build_keyboard(service.main_keyboard(member)))
+            except Exception:
+                logger.exception("Failed to send error message", user_id=user_id)
 
 
 def main() -> None:
-    logger.info("Start initializing bot")
-    TOKEN = Configs().vk_bot_token
-    vk_session = VkApi(token=TOKEN)
+    configs, service = bootstrap("vk")
+    if not configs.vk_bot_token:
+        logger.critical("VK_BOT_TOKEN is not set")
+        sys.exit(1)
+
+    vk_session = VkApi(token=configs.vk_bot_token)
     vk = vk_session.get_api()
-    longpoll = VkLongPoll(vk_session)
-    logger.info("Start bot polling")
-    for event in longpoll.listen():
-        if event.type == VkEventType.MESSAGE_NEW and event.to_me:
-            logger.info("New message catched")
-            match event.text:
-                case consts.BEGIN_TEXT:
-                    response = consts.START_TEXT
-                case consts.IS_OPEN_QUERY:
-                    response = lab_is_open_answer()
-                case consts.TO_OPEN_QUERY:
-                    response = lab_switch_state_answer(
-                        open=True,
-                        user_id=event.user_id,
-                        bot_type=BotType.vk
-                    )
-                case consts.TO_CLOSE_QUERY:
-                    response = lab_switch_state_answer(
-                        open=False,
-                        user_id=event.user_id,
-                        bot_type=BotType.vk
-                    )
-                case _:
-                    logger.info("Got not a command, continue")
-                    continue
-            if response:
-                logger.info("Got answer, sending a message")
-                vk.messages.send(
-                    user_id=event.user_id,
-                    message=response,
-                    keyboard=get_keyboard(event.user_id),
-                    random_id=0
-                )
-                logger.info("Message sent")
+
+    while True:
+        try:
+            longpoll = VkLongPoll(vk_session)
+            logger.info("Start VK long polling")
+            for event in longpoll.listen():
+                if event.type == VkEventType.MESSAGE_NEW and event.to_me:
+                    process_event(event, vk, service)
+        except KeyboardInterrupt:
+            logger.info("VK bot stopped by user")
+            break
+        except (requests.RequestException, ApiError):
+            logger.exception("VK long polling failed, reconnecting",
+                             delay_seconds=RECONNECT_DELAY_SECONDS)
+            time.sleep(RECONNECT_DELAY_SECONDS)
+        except Exception:
+            logger.exception("Unexpected error in VK bot, reconnecting",
+                             delay_seconds=RECONNECT_DELAY_SECONDS)
+            time.sleep(RECONNECT_DELAY_SECONDS)
 
 
 if __name__ == "__main__":

@@ -1,32 +1,37 @@
 import asyncio
+import sys
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
 from structlog import get_logger
 
-from src.configs import Configs, setup_logging
+from src.core.bootstrap import bootstrap
 
 from .handlers import router
 
-setup_logging()
-logger = get_logger()
-
-
-def register_routers(dp: Dispatcher) -> None:
-    dp.include_routers(router)
-
 
 async def main() -> None:
-    session = AiohttpSession()
-    bot = Bot(Configs().tg_bot_token, session=session)
-    dp = Dispatcher()
-    register_routers(dp)
-    try:
-        await bot.delete_webhook()
-        await asyncio.create_task(dp.start_polling(bot))
+    configs, service = bootstrap("telegram")
+    logger = get_logger(__name__)
+    if not configs.tg_bot_token:
+        logger.critical("TG_BOT_TOKEN is not set")
+        sys.exit(1)
 
-    except Exception as ex:
-        print(ex)
+    bot = Bot(configs.tg_bot_token, session=AiohttpSession())
+    dp = Dispatcher(service=service)
+    dp.include_routers(router)
+    try:
+        me = await bot.get_me()
+        logger.info("Telegram bot authorized", bot_username=me.username, bot_id=me.id)
+        await bot.delete_webhook()
+        logger.info("Start polling")
+        await dp.start_polling(bot)
+    except Exception:
+        logger.exception("Telegram bot crashed")
+        raise
+    finally:
+        logger.info("Telegram bot stopped")
+        await bot.session.close()
 
 
 if __name__ == "__main__":

@@ -1,6 +1,10 @@
-.env
+.docker/.env
 venv/
 __pycache__/
 *.pdf
 .mypy_cache/
 .vscode/
+logs/
+data/*.lock
+data/*.tmp
+.idea
