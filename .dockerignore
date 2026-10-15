@@ -1,0 +1,11 @@
+.git
+.idea
+.vscode
+.venv
+venv
+__pycache__
+*.pyc
+.mypy_cache
+.ruff_cache
+logs
+.docker/.env
